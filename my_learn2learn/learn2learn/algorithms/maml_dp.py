@@ -166,7 +166,7 @@ class MAML(BaseLearner):
                 print('learn2learn: Maybe try with allow_nograd=True and/or allow_unused=True ?')
 
 
-        for g in gradients:
+        for g in gradients: # TODO: check the budget
             g.add_(torch_normal(mean=0, std=1e-3, size=g.size()))        
         self.module = maml_update(self.module, self.lr, gradients)
 
