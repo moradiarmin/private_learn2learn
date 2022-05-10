@@ -42,7 +42,7 @@ def accuracy(predictions, targets):
     return acc.item()
 
 
-def main(writer, lr=0.005, maml_lr=0.01, iterations=10, ways=5, shots=1, tps=8, fas=5, device=torch.device("cpu"), download_location='./data'): # iterations = 1000, tps = 8
+def run(writer, lr=0.005, maml_lr=0.01, iterations=10, ways=5, shots=1, tps=8, fas=5, device=torch.device("cpu"), download_location='./data'): # iterations = 1000, tps = 8
     transformations = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,)),
@@ -112,6 +112,15 @@ def main(writer, lr=0.005, maml_lr=0.01, iterations=10, ways=5, shots=1, tps=8, 
         opt.step()
 
 
+def main(writer, lr=0.005, maml_lr=0.01, iterations=10, ways=5, shots=1, tps=8, fas=5, device=torch.device("cpu"), download_location='./data'):
+    is_member_arr = [True, False, True, False]
+    is_dp_arr = [False, True, True, False]
+    for i in range (4):
+        is_member = is_member_arr[i]
+        is_dp = is_dp_arr[i]
+        for _ in (50):
+            run(writer, lr=0.005, maml_lr=0.01, iterations=10, ways=5, shots=1, tps=8, fas=5, device=torch.device("cpu"), download_location='./data')
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Learn2Learn MNIST Example')
 
@@ -155,9 +164,8 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    writer = SummaryWriter(log_dir='.')
-
-    main(writer=writer,
+    writer = SummaryWriter(log_dir='../logs')
+    run(writer=writer,
         lr=args.lr,
          maml_lr=args.maml_lr,
          iterations=args.iterations,

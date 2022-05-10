@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import os
+
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
 import argparse
 import random
 import pickle
@@ -17,6 +21,7 @@ import os
 import learn2learn as l2l
 from PIL import Image
 
+from torch.utils.tensorboard import SummaryWriter
 
 class Net(nn.Module):
     def __init__(self, ways=3):
@@ -124,8 +129,8 @@ def choose_attack_data(dataset, member, task=None, query=True, shots=None, ways=
     return target_x, target_y
 
 
-def main(lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=1, tps=1, fas=5, device=torch.device("cpu"),
-         download_location='~/data', member=False, coef=0.0001, query=True, attack_iter=1, save_location=''):
+def run_attack(experiment_no=None, writer=None, is_dp=False, member=False, lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=1, tps=1, fas=5, device=torch.device("cpu"),
+         download_location='~/data', coef=0.0001, query=True, attack_iter=1, save_location=''):
     transformations = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,)),
@@ -149,7 +154,11 @@ def main(lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=1, tps=1, fas=5,
 
     model = Net(ways)
     model.to(device)
-    meta_model = l2l.algorithms.MAML(model, lr=maml_lr)
+    if is_dp:
+        # print('run private')
+        meta_model = l2l.algorithms.MAML_DP(model, lr=maml_lr)
+    else:
+        meta_model = l2l.algorithms.MAML(model, lr=maml_lr)
     opt = optim.Adam(meta_model.parameters(), lr=lr)
     loss_func = nn.NLLLoss(reduction='mean')
 
@@ -223,7 +232,7 @@ def main(lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=1, tps=1, fas=5,
 
         iteration_error /= (tps+1)
         iteration_acc /= tps
-        print('Loss : {:.3f} Acc : {:.3f}'.format(iteration_error.item(), iteration_acc), 'iteration:', iteration)
+        # print('Loss : {:.3f} Acc : {:.3f}'.format(iteration_error.item(), iteration_acc), 'iteration:', iteration)
         # Take the meta-learning step
         opt.zero_grad()
         iteration_error.backward()
@@ -232,19 +241,62 @@ def main(lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=1, tps=1, fas=5,
         x_pred = meta_model(target_x)
         target_error = loss_func(x_pred, target_y)
         target_losses.append(target_error.data.cpu().numpy())
-        print("after meta update", target_error)
 
-    print(target_losses)
-    save_arr(target_losses, '{}_target.pkl'.format(save_location))
-    save_arr(bad_losses, '{}_bad.pkl'.format(save_location))
-    save_arr(task_losses, '{}_task.pkl'.format(save_location))
+        # print("after meta update", target_error)
+        writer.add_scalar(f'Iteration Accuracy {experiment_no}', iteration_acc, iteration)
+        writer.add_scalar(f'Iteration Error {experiment_no} ', iteration_error.item(), iteration)
+        writer.add_scalar(f'Target Error {experiment_no}', target_error.data.cpu().numpy(), iteration)
+    save_arr(target_losses, f'{save_location}/target{experiment_no}.pkl')
+    # save_arr(bad_losses, f'{save_location}/bad{experiment_no}.pkl')
+    # save_arr(task_losses, f'{save_location}/task{experiment_no}.pkl')
 
+
+
+def main(args, experiment_count=50):
+
+    dp_dir = ['/nodp', '/dp']
+    member_dir = ['/notmember', '/member']
+    is_member_arr = [False]
+    is_dp_arr = [False]
+
+    for i in range(len(is_member_arr)):
+        is_member = is_member_arr[i]
+        is_dp = is_dp_arr[i]
+        log_dir = dp_dir[is_dp] + member_dir[is_member]
+        writer = SummaryWriter(log_dir='log' + log_dir)
+        save_location = 'results' + log_dir
+
+        for en in range(experiment_count):
+            if en % 10 == 0:
+                print (f'--------- {en}th iteration out of {experiment_count} experiments.' )
+
+            run_attack(experiment_no=en,
+                writer=writer,
+                is_dp=is_dp,
+                member=is_member,
+                save_location=save_location,
+                lr=args.lr,
+                maml_lr=args.maml_lr,
+                iterations=args.iterations,
+                ways=args.ways,
+                shots=args.shots,
+                tps=args.tasks_per_step,
+                fas=args.fast_adaption_steps,
+                device=device,
+                download_location=args.download_location,
+                query=args.query,
+                coef=args.coef,
+                attack_iter=args.attack_iter)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Learn2Learn MNIST Example')
 
     parser.add_argument('--member', default=True, type=lambda x: (str(x).lower() == 'true'),
                         help='is target member or not')
+
+
+    parser.add_argument('--is-dp', default=False,type=lambda x: (str(x).lower() == 'true'),
+                        help='should run dp')
 
     parser.add_argument('--coef', type=float, default=1 / 10000,
                         help='coefficient to multiply to grad ascent loss')
@@ -281,7 +333,7 @@ if __name__ == '__main__':
     parser.add_argument('--download-location', type=str, default="/tmp/mnist", metavar='S',
                         help='download location for train data (default : /tmp/mnist')
 
-    parser.add_argument('--save-location', type=str, default="mina/results/test", metavar='S',
+    parser.add_argument('--save-location', type=str, default="results_arr/", metavar='S',
                         help='save location for results')
     args = parser.parse_args()
 
@@ -297,17 +349,4 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    main(lr=args.lr,
-         maml_lr=args.maml_lr,
-         iterations=args.iterations,
-         ways=args.ways,
-         shots=args.shots,
-         tps=args.tasks_per_step,
-         fas=args.fast_adaption_steps,
-         device=device,
-         download_location=args.download_location,
-         member=args.member,
-         query=args.query,
-         coef=args.coef,
-         attack_iter=args.attack_iter,
-         save_location=args.save_location)
+    main(args=args, experiment_count=70)

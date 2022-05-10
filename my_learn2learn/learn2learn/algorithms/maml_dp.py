@@ -47,7 +47,7 @@ def maml_update(model, lr, grads=None):
     return update_module(model)
 
 
-class MAML(BaseLearner):
+class MAML_DP(BaseLearner):
     """
     [[Source]](https://github.com/learnables/learn2learn/blob/master/learn2learn/algorithms/maml.py)
 
@@ -94,7 +94,7 @@ class MAML(BaseLearner):
                  first_order=False,
                  allow_unused=None,
                  allow_nograd=False):
-        super(MAML, self).__init__()
+        super(MAML_DP, self).__init__()
         self.module = model
         self.lr = lr
         self.first_order = first_order
@@ -197,7 +197,7 @@ class MAML(BaseLearner):
             allow_unused = self.allow_unused
         if allow_nograd is None:
             allow_nograd = self.allow_nograd
-        return MAML(clone_module(self.module),
+        return MAML_DP(clone_module(self.module),
                     lr=self.lr,
                     first_order=first_order,
                     allow_unused=allow_unused,
