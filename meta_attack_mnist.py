@@ -106,16 +106,17 @@ def choose_attack_data(dataset, member, task=None, query=True, shots=None, ways=
     else:
         train_task = dataset[task]
         data, labels = train_task
-        # data = data.to(device)
-        # labels = labels.to(device)
+
         adaptation_indices = np.zeros(data.size(0), dtype=bool)
         adaptation_indices[np.arange(shots * ways) * 2] = True
         evaluation_indices = torch.from_numpy(~adaptation_indices)
         adaptation_indices = torch.from_numpy(adaptation_indices)
-        adaptation_data, adaptation_labels = data[adaptation_indices], labels[adaptation_indices]
-        evaluation_data, evaluation_labels = data[evaluation_indices], labels[evaluation_indices]
+        adaptation_data, adaptation_labels = data[adaptation_indices],\
+             labels[adaptation_indices]
+        evaluation_data, evaluation_labels = data[evaluation_indices],\
+             labels[evaluation_indices]
         data_idx = random.randint(0, len(evaluation_labels)-1)
-#        print("#################" , len(evaluation_labels) , len(adaptation_labels))
+
         if query:
             target_x = evaluation_data[data_idx]
             target_y = evaluation_labels[data_idx]
@@ -129,7 +130,7 @@ def choose_attack_data(dataset, member, task=None, query=True, shots=None, ways=
     return target_x, target_y
 
 
-def run_attack(experiment_no=None, writer=None, is_dp=False, member=False, lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=1, tps=1, fas=5, device=torch.device("cpu"),
+def run_attack(experiment_no=None, writer=None, is_dp=False, member=False, lr=0.005, maml_lr=0.01, iterations=1000, ways=5, shots=3, tps=1, fas=5, device=torch.device("cpu"),
          download_location='~/data', coef=0.0001, query=True, attack_iter=1, save_location=''):
     transformations = transforms.Compose([
         transforms.ToTensor(),
@@ -155,12 +156,11 @@ def run_attack(experiment_no=None, writer=None, is_dp=False, member=False, lr=0.
     model = Net(ways)
     model.to(device)
     if is_dp:
-        # print('run private')
         meta_model = l2l.algorithms.MAML_DP(model, lr=maml_lr)
     else:
         meta_model = l2l.algorithms.MAML(model, lr=maml_lr)
     opt = optim.Adam(meta_model.parameters(), lr=lr)
-    loss_func = nn.NLLLoss(reduction='mean')
+    loss_func = nn.NLLLchooss(reduction='mean')
 
     mnist_for_target = torchvision.datasets.MNIST(root="/tmp/mnist", train=False, download=True,
                                                   transform=transformations)
@@ -215,8 +215,6 @@ def run_attack(experiment_no=None, writer=None, is_dp=False, member=False, lr=0.
             valid_error /= len(evaluation_data)
             valid_accuracy = accuracy(predictions, evaluation_labels)
             t_error = loss_func(learner(target_x), target_y)
-#            print("good error", t_error)
-#            print("all good error", valid_error)
             task_losses.append(valid_error.data.cpu().numpy())
             iteration_error += valid_error
             iteration_acc += valid_accuracy
@@ -232,8 +230,7 @@ def run_attack(experiment_no=None, writer=None, is_dp=False, member=False, lr=0.
 
         iteration_error /= (tps+1)
         iteration_acc /= tps
-        # print('Loss : {:.3f} Acc : {:.3f}'.format(iteration_error.item(), iteration_acc), 'iteration:', iteration)
-        # Take the meta-learning step
+
         opt.zero_grad()
         iteration_error.backward()
         opt.step()
